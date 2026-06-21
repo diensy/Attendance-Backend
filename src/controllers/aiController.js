@@ -430,7 +430,7 @@ exports.chatWithCoach = async (req, res) => {
     } catch(e) {} // Ignore if phase 3 table not init yet
 
     // 3. Recent Attendance
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     let todayStudyHours = 0;
     const attRes = await db.query('SELECT study_hours FROM clover_attendance WHERE user_id = $1 AND date = $2', [userId, todayStr]);
     if (attRes.rows.length > 0) todayStudyHours = attRes.rows[0].study_hours;

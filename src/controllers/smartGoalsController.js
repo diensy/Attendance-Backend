@@ -16,7 +16,7 @@ exports.getSmartGoals = async (req, res) => {
     if (autoCompletedRes.rows.length > 0) {
       const { recalculateAttendance } = require('./attendanceController');
       for (const row of autoCompletedRes.rows) {
-        const dateStr = new Date(row.end_time).toISOString().split('T')[0];
+        const dateStr = new Date(row.end_time).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
         await recalculateAttendance(userId, dateStr);
       }
     }
@@ -99,7 +99,7 @@ exports.completeSmartGoal = async (req, res) => {
     );
     if (result.rows.length > 0) {
       const { recalculateAttendance } = require('./attendanceController');
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
       await recalculateAttendance(userId, todayStr);
     }
     res.json(result.rows[0] || { message: 'Goal already completed or not found' });

@@ -128,7 +128,7 @@ exports.getGitHubData = async (req, res) => {
 
       // Recalculate today's attendance (updates streak and status)
       const { recalculateAttendance } = require('./attendanceController');
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
       await recalculateAttendance(userId, todayStr);
 
       res.json(responseData);
@@ -163,7 +163,7 @@ exports.getGitHubData = async (req, res) => {
 
       // Recalculate today's attendance (updates streak and status)
       const { recalculateAttendance } = require('./attendanceController');
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
       await recalculateAttendance(userId, todayStr);
 
       res.json(mockData);
@@ -248,7 +248,7 @@ exports.getCommitsCountForDate = async (userId, dateStr) => {
 
   const targetCommits = gitData.commits.filter(commit => {
     const commitDate = new Date(commit.date);
-    const commitDateStr = `${commitDate.getFullYear()}-${String(commitDate.getMonth() + 1).padStart(2, '0')}-${String(commitDate.getDate()).padStart(2, '0')}`;
+    const commitDateStr = commitDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     return commitDateStr === dateStr;
   });
 
@@ -257,7 +257,7 @@ exports.getCommitsCountForDate = async (userId, dateStr) => {
 
 exports.getTodayCommitsCount = async (userId) => {
   const now = new Date();
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   return exports.getCommitsCountForDate(userId, todayStr);
 };
 

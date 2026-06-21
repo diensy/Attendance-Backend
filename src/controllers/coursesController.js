@@ -858,7 +858,7 @@ exports.completeVideo = async (req, res) => {
     );
 
     // 3. Sync study hours with clover_attendance for today
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     const attRes = await db.query(
       'SELECT id, study_hours, daily_notes FROM clover_attendance WHERE user_id = $1 AND date = $2',
       [userId, todayStr]
@@ -1269,7 +1269,7 @@ exports.toggleRoadmapItem = async (req, res) => {
         if (videoRes.rows.length > 0) {
           const video = videoRes.rows[0];
           const durationHours = Number((video.duration_seconds / 3600).toFixed(2));
-          const todayStr = new Date().toISOString().split('T')[0];
+          const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
           const attRes = await db.query(
             'SELECT id, study_hours, daily_notes FROM clover_attendance WHERE user_id = $1 AND date = $2',
@@ -1308,7 +1308,7 @@ exports.toggleRoadmapItem = async (req, res) => {
     }
 
     // Always recalculate attendance status for today
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     await recalculateAttendance(userId, todayStr);
 
     res.json({ message: 'Roadmap step status updated successfully!', status: nextStatus });
