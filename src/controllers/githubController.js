@@ -152,35 +152,26 @@ exports.getGitHubData = async (req, res) => {
         return res.status(404).json({ message: `GitHub username "${githubUsername}" does not exist.` });
       }
 
-      console.warn(`⚠️ [GitHub] API fetch failed: ${apiErr.message}. Falling back to styled mock data.`);
+      console.warn(`⚠️ [GitHub] API fetch failed for user "${githubUsername}": ${apiErr.message}.`);
       
-      // Fallback to high quality mock data using user's configured username
-      const mockData = {
-        hasUsername: true,
-        username: githubUsername,
-        isMocked: true,
-        repos: getMockRepos(githubUsername),
-        commits: getMockCommits(githubUsername)
-      };
-
-      githubCache.set(userId, { data: mockData, expiry: Date.now() + CACHE_DURATION_MS });
-
-      // Trigger silent auto-link of roadmaps on mock data (e.g. for testing)
-      try {
-        const { autoLinkRoadmaps } = require('./coursesController');
-        if (autoLinkRoadmaps) {
-          await autoLinkRoadmaps(userId);
-        }
-      } catch (err) {
-        console.warn('Undeclared auto-link roadmaps on github update:', err.message);
+      let errorMsg = `GitHub API request failed: ${apiErr.message}.`;
+      if (apiErr.status === 403) {
+        errorMsg = `GitHub API rate limit exceeded. To prevent this, please add a GITHUB_TOKEN in your backend/.env file.`;
       }
 
-      // Recalculate today's attendance (updates streak and status)
-      const { recalculateAttendance } = require('./attendanceController');
-      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-      await recalculateAttendance(userId, todayStr);
+      const errorData = {
+        hasUsername: true,
+        username: githubUsername,
+        isMocked: false,
+        repos: [],
+        commits: [],
+        error: errorMsg
+      };
 
-      res.json(mockData);
+      // Cache the error state for 10 seconds so it doesn't slam the API but permits quick retries
+      githubCache.set(userId, { data: errorData, expiry: Date.now() + 10000 });
+
+      res.json(errorData);
     }
 
   } catch (err) {
@@ -230,9 +221,10 @@ exports.getCommitsCountForDate = async (userId, dateStr) => {
         data = {
           hasUsername: true,
           username: githubUsername,
-          isMocked: true,
-          repos: getMockRepos(githubUsername),
-          commits: getMockCommits(githubUsername)
+          isMocked: false,
+          repos: [],
+          commits: [],
+          error: apiErr.message
         };
       }
       
@@ -247,7 +239,9 @@ exports.getCommitsCountForDate = async (userId, dateStr) => {
   if (!gitData || !gitData.commits) return 0;
 
   const targetCommits = gitData.commits.filter(commit => {
+    if (!commit || !commit.date) return false;
     const commitDate = new Date(commit.date);
+    if (isNaN(commitDate.getTime())) return false;
     const commitDateStr = commitDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     return commitDateStr === dateStr;
   });

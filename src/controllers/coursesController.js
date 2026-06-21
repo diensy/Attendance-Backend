@@ -1268,7 +1268,7 @@ exports.toggleRoadmapItem = async (req, res) => {
 
         if (videoRes.rows.length > 0) {
           const video = videoRes.rows[0];
-          const durationHours = Number((video.duration_seconds / 3600).toFixed(2));
+          const durationHours = Number(((video.duration_seconds || 0) / 3600).toFixed(2));
           const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
           const attRes = await db.query(
