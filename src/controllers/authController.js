@@ -239,9 +239,31 @@ exports.updateProfile = async (req, res) => {
   const userId = req.user.id;
 
   try {
+    const usernameClean = github_username ? github_username.trim() : null;
+
+    if (usernameClean) {
+      // Validate that this username actually exists on GitHub
+      const headers = {
+        'User-Agent': 'Code-Clover-Application',
+        'Accept': 'application/vnd.github.v3+json',
+      };
+      if (process.env.GITHUB_TOKEN) {
+        headers['Authorization'] = `token ${process.env.GITHUB_TOKEN}`;
+      }
+
+      try {
+        const ghRes = await fetch(`https://api.github.com/users/${usernameClean}`, { headers });
+        if (ghRes.status === 404) {
+          return res.status(404).json({ message: `GitHub username "${usernameClean}" does not exist.` });
+        }
+      } catch (fetchErr) {
+        console.warn('GitHub validation fetch failed, allowing profile update anyway:', fetchErr.message);
+      }
+    }
+
     const result = await db.query(
       'UPDATE clover_users SET github_username = $1 WHERE id = $2 RETURNING id, username, email, github_username, is_verified, profile_pic_url, security_question',
-      [github_username ? github_username.trim() : null, userId]
+      [usernameClean, userId]
     );
 
     res.json({

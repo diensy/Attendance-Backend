@@ -18,7 +18,9 @@ const fetchGitHubAPI = async (url) => {
 
   const response = await fetch(url, { headers });
   if (!response.ok) {
-    throw new Error(`GitHub API error: ${response.statusText} (${response.status})`);
+    const error = new Error(`GitHub API error: ${response.statusText} (${response.status})`);
+    error.status = response.status;
+    throw error;
   }
   return await response.json();
 };
@@ -127,6 +129,10 @@ exports.getGitHubData = async (req, res) => {
       res.json(responseData);
 
     } catch (apiErr) {
+      if (apiErr.status === 404) {
+        return res.status(404).json({ message: `GitHub username "${githubUsername}" does not exist.` });
+      }
+
       console.warn(`⚠️ [GitHub] API fetch failed: ${apiErr.message}. Falling back to styled mock data.`);
       
       // Fallback to high quality mock data using user's configured username
@@ -213,6 +219,9 @@ exports.getCommitsCountForDate = async (userId, dateStr) => {
           commits: commits.slice(0, 10)
         };
       } catch (apiErr) {
+        if (apiErr.status === 404) {
+          return 0;
+        }
         data = {
           hasUsername: true,
           username: githubUsername,
