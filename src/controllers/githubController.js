@@ -25,6 +25,35 @@ const fetchGitHubAPI = async (url) => {
   return await response.json();
 };
 
+// Helper to fetch actual commits for the top 2 pushed repositories (handles Oct 2025 breaking change)
+const parseCommitsFromEvents = async (pushEvents) => {
+  const commits = [];
+  const pushedRepos = Array.from(new Set(pushEvents.map(e => e.repo.name))).slice(0, 2);
+
+  for (const repoFullName of pushedRepos) {
+    try {
+      const repoCommits = await fetchGitHubAPI(`https://api.github.com/repos/${repoFullName}/commits?per_page=5`);
+      const repoName = repoFullName.split('/')[1] || repoFullName;
+      
+      const matchingPush = pushEvents.find(e => e.repo.name === repoFullName);
+      const pushDate = matchingPush ? matchingPush.created_at : new Date().toISOString();
+
+      repoCommits.forEach(c => {
+        commits.push({
+          sha: c.sha.substring(0, 7),
+          message: c.commit.message,
+          repo: repoName,
+          date: pushDate,
+          author: c.author ? c.author.login : c.commit.author.name
+        });
+      });
+    } catch (repoErr) {
+      console.warn(`Failed to fetch commits for repo ${repoFullName}:`, repoErr.message);
+    }
+  }
+  return commits;
+};
+
 exports.getGitHubData = async (req, res) => {
   const userId = req.user.id;
 
@@ -68,22 +97,7 @@ exports.getGitHubData = async (req, res) => {
 
       // Filter events to find PushEvents (commits)
       const pushEvents = events.filter(event => event.type === 'PushEvent');
-      const commits = [];
-
-      pushEvents.forEach(event => {
-        const repoName = event.repo.name.split('/')[1] || event.repo.name;
-        if (event.payload && event.payload.commits) {
-          event.payload.commits.forEach(commit => {
-            commits.push({
-              sha: commit.sha.substring(0, 7),
-              message: commit.message,
-              repo: repoName,
-              date: event.created_at,
-              author: event.actor.login
-            });
-          });
-        }
-      });
+      const commits = await parseCommitsFromEvents(pushEvents);
 
       // Format repositories list
       const formattedRepos = repos.map(repo => ({
@@ -191,21 +205,7 @@ exports.getCommitsCountForDate = async (userId, dateStr) => {
         const repos = await fetchGitHubAPI(`https://api.github.com/users/${githubUsername}/repos?sort=updated&per_page=6`);
         const events = await fetchGitHubAPI(`https://api.github.com/users/${githubUsername}/events/public?per_page=20`);
         const pushEvents = events.filter(event => event.type === 'PushEvent');
-        const commits = [];
-        pushEvents.forEach(event => {
-          const repoName = event.repo.name.split('/')[1] || event.repo.name;
-          if (event.payload && event.payload.commits) {
-            event.payload.commits.forEach(commit => {
-              commits.push({
-                sha: commit.sha.substring(0, 7),
-                message: commit.message,
-                repo: repoName,
-                date: event.created_at,
-                author: event.actor.login
-              });
-            });
-          }
-        });
+        const commits = await parseCommitsFromEvents(pushEvents);
         
         const formattedRepos = repos.map(repo => ({
           id: repo.id,
