@@ -137,12 +137,14 @@ CREATE TABLE IF NOT EXISTS clover_roadmap_items (
   title VARCHAR(255) NOT NULL,
   status VARCHAR(20) DEFAULT 'Not Started', -- 'Not Started', 'In Progress', 'Completed'
   associated_video_id INTEGER REFERENCES clover_course_videos(id) ON DELETE SET NULL,
-  position INTEGER DEFAULT 0
+  position INTEGER DEFAULT 0,
+  completed_at TIMESTAMPTZ DEFAULT NULL
 );
 -- Safe upgrades
 ALTER TABLE clover_courses ADD COLUMN IF NOT EXISTS subject VARCHAR(50) DEFAULT 'General';
 ALTER TABLE clover_course_videos ADD COLUMN IF NOT EXISTS start_seconds INTEGER DEFAULT 0;
 ALTER TABLE clover_roadmaps ADD COLUMN IF NOT EXISTS subject VARCHAR(50) DEFAULT 'General';
+ALTER TABLE clover_roadmap_items ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ DEFAULT NULL;
 
 -- Create User Preferences table
 CREATE TABLE IF NOT EXISTS clover_user_preferences (
@@ -179,4 +181,21 @@ CREATE TABLE IF NOT EXISTS clover_smart_goals (
   actual_end_time TIMESTAMPTZ DEFAULT NULL,
   quit_reason VARCHAR(255) DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create Interactive Study IDE Tasks table for tracking progressive challenges
+CREATE TABLE IF NOT EXISTS clover_study_ide_tasks (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES clover_users(id) ON DELETE CASCADE,
+  subject VARCHAR(100) NOT NULL,
+  topic VARCHAR(100) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  description TEXT NOT NULL,
+  starter_code TEXT NOT NULL,
+  test_code TEXT NOT NULL,
+  user_code TEXT DEFAULT '',
+  is_completed BOOLEAN DEFAULT FALSE,
+  task_order INTEGER NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+  completed_at TIMESTAMPTZ DEFAULT NULL
 );

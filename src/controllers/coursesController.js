@@ -905,7 +905,7 @@ exports.completeVideo = async (req, res) => {
     // 6. Complete matching roadmap items
     await db.query(
       `UPDATE clover_roadmap_items
-       SET status = 'Completed'
+       SET status = 'Completed', completed_at = CURRENT_TIMESTAMP
        WHERE associated_video_id = $1 OR title ILIKE $2`,
       [videoId, `%${videoKeyword}%`]
     );
@@ -1236,9 +1236,10 @@ exports.toggleRoadmapItem = async (req, res) => {
     const nextStatus = item.status === 'Completed' ? 'Not Started' : 'Completed';
 
     // 2. Update roadmap item status
+    const completedAt = nextStatus === 'Completed' ? new Date() : null;
     await db.query(
-      'UPDATE clover_roadmap_items SET status = $1 WHERE id = $2',
-      [nextStatus, itemId]
+      'UPDATE clover_roadmap_items SET status = $1, completed_at = $2 WHERE id = $3',
+      [nextStatus, completedAt, itemId]
     );
 
     // 3. If there is an associated video, update its progress
@@ -1294,9 +1295,6 @@ exports.toggleRoadmapItem = async (req, res) => {
               [newHours, newNotes, attendance.id]
             );
           }
-
-          // Recalculate attendance stats
-          await recalculateAttendance(userId, todayStr);
         }
       } else {
         // Unmark video completion
@@ -1308,6 +1306,10 @@ exports.toggleRoadmapItem = async (req, res) => {
         );
       }
     }
+
+    // Always recalculate attendance status for today
+    const todayStr = new Date().toISOString().split('T')[0];
+    await recalculateAttendance(userId, todayStr);
 
     res.json({ message: 'Roadmap step status updated successfully!', status: nextStatus });
   } catch (err) {

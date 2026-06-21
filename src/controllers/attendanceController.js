@@ -161,34 +161,33 @@ exports.getStats = async (req, res) => {
     // 2. Calculate consecutive day streak
     let streak = 0;
     
-    // Filter present days and parse dates
-    const presentDates = logs
+    // Filter present days and get date strings
+    const presentDateStrs = logs
       .filter(log => log.status === 'Present')
-      .map(log => new Date(log.date))
-      .sort((a, b) => b - a); // Sort newest first
+      .map(log => log.date) // since they are text formatted YYYY-MM-DD
+      .filter(Boolean)
+      .sort((a, b) => b.localeCompare(a)); // Sort newest first
 
-    if (presentDates.length > 0) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+    if (presentDateStrs.length > 0) {
+      const nowObj = new Date();
+      const todayStr = `${nowObj.getFullYear()}-${String(nowObj.getMonth() + 1).padStart(2, '0')}-${String(nowObj.getDate()).padStart(2, '0')}`;
       
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      yesterday.setHours(0, 0, 0, 0);
+      const yesterdayObj = new Date();
+      yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+      const yesterdayStr = `${yesterdayObj.getFullYear()}-${String(yesterdayObj.getMonth() + 1).padStart(2, '0')}-${String(yesterdayObj.getDate()).padStart(2, '0')}`;
 
       // Verify if they studied today or yesterday to maintain streak
-      const newestDate = new Date(presentDates[0]);
-      newestDate.setHours(0, 0, 0, 0);
+      const newestDateStr = presentDateStrs[0];
 
-      if (newestDate >= yesterday) {
+      if (newestDateStr === todayStr || newestDateStr === yesterdayStr) {
         streak = 1;
-        let lastDate = newestDate;
+        let lastDate = new Date(newestDateStr + 'T00:00:00');
 
-        for (let i = 1; i < presentDates.length; i++) {
-          const currentDate = new Date(presentDates[i]);
-          currentDate.setHours(0, 0, 0, 0);
+        for (let i = 1; i < presentDateStrs.length; i++) {
+          const currentDate = new Date(presentDateStrs[i] + 'T00:00:00');
 
           const diffTime = Math.abs(lastDate - currentDate);
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
           if (diffDays === 1) {
             streak++;
@@ -269,25 +268,52 @@ exports.recalculateAttendance = async (userId, dateStr) => {
     }
   }
 
-  // 3. Get completed todos count due on dateStr
+  // 3. Get completed todos count due on dateStr (for stats/Half Day fallback)
   const todosRes = await db.query(
     'SELECT COUNT(*) FROM clover_todos WHERE user_id = $1 AND due_date = $2 AND is_completed = true',
     [userId, dateStr]
   );
   const completedCount = parseInt(todosRes.rows[0].count || '0');
 
-  // 4. Determine status
+  // 4. Get completed roadmap items count on dateStr
+  const roadmapRes = await db.query(
+    "SELECT COUNT(*) FROM clover_roadmap_items i JOIN clover_roadmaps r ON i.roadmap_id = r.id WHERE r.user_id = $1 AND i.status = 'Completed' AND i.completed_at::date = $2",
+    [userId, dateStr]
+  );
+  const completedRoadmapCount = parseInt(roadmapRes.rows[0].count || '0');
+
+  // 5. Get GitHub commits count on dateStr
+  const { getCommitsCountForDate } = require('./githubController');
+  const commitsCount = await getCommitsCountForDate(userId, dateStr);
+
+  // 6. Get completed smart goals count on dateStr
+  const smartGoalsRes = await db.query(
+    "SELECT COUNT(*) FROM clover_smart_goals WHERE user_id = $1 AND status = 'Completed' AND actual_end_time::date = $2",
+    [userId, dateStr]
+  );
+  const completedSmartGoalsCount = parseInt(smartGoalsRes.rows[0].count || '0');
+
+  // 7. Determine status based on new criteria:
+  // - Study hours >= 1.0 hour
+  // - Completed at least 1 roadmap item
+  // - Pushed at least 1 git commit
+  // - Completed at least 1 smart goal
   let status = 'Absent';
-  if (studyHours >= 2.0 && completedCount >= 3) {
+  const hasFocusTime = studyHours >= 1.0;
+  const hasRoadmapItem = completedRoadmapCount >= 1;
+  const hasGitCommit = commitsCount >= 1;
+  const hasSmartGoal = completedSmartGoalsCount >= 1;
+
+  if (hasFocusTime || hasRoadmapItem || hasGitCommit || hasSmartGoal) {
     status = 'Present';
-  } else if (studyHours >= 1.0) {
+  } else if (studyHours > 0 || completedCount > 0) {
     status = 'Half Day';
   }
 
-  // 5. Update or insert the attendance row
+  // 8. Update or insert the attendance row
   if (attRes.rows.length === 0) {
-    // Only insert if they have completed todos or study hours > 0
-    if (completedCount > 0 || studyHours > 0) {
+    // Only insert if they are Present, Half Day, or have some activity
+    if (status === 'Present' || status === 'Half Day' || completedCount > 0 || studyHours > 0) {
       await db.query(
         'INSERT INTO clover_attendance (user_id, date, status, study_hours, daily_notes) VALUES ($1, $2, $3, $4, $5)',
         [userId, dateStr, status, studyHours, '[System] Auto-synchronized study status.']

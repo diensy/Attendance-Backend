@@ -27,6 +27,16 @@ const initDatabase = async () => {
       console.warn('⚠️ [Database] smart_goals TIMESTAMPTZ migration warning:', migErr.message);
     }
 
+    // Migrate existing roadmap items to add completed_at column if needed
+    try {
+      await db.query(`
+        ALTER TABLE clover_roadmap_items ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ DEFAULT NULL;
+      `);
+      console.log('🍀 [Database] roadmap_items columns verified/migrated.');
+    } catch (migErr) {
+      console.warn('⚠️ [Database] roadmap_items migration warning:', migErr.message);
+    }
+
     console.log('🍀 [Database] Tables initialized/verified successfully.');
   } catch (err) {
     console.error('❌ [Database] Failed to initialize tables:', err.message);

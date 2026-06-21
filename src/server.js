@@ -15,6 +15,7 @@ const reportsRoutes = require('./routes/reports');
 const todoRoutes = require('./routes/todos');
 const coursesRoutes = require('./routes/courses');
 const smartGoalsRoutes = require('./routes/smartGoals');
+const studyIdeRoutes = require('./routes/studyIde');
 const { startScheduler } = require('./utils/scheduler');
 
 const app = express();
@@ -50,6 +51,7 @@ app.use('/api/reports', reportsRoutes);
 app.use('/api/todos', todoRoutes);
 app.use('/api/courses', coursesRoutes);
 app.use('/api/smart-goals', smartGoalsRoutes);
+app.use('/api/study-ide', studyIdeRoutes);
 
 // Start server and initialize database tables
 const startServer = async () => {

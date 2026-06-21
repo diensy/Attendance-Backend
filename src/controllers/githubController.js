@@ -119,6 +119,11 @@ exports.getGitHubData = async (req, res) => {
         console.warn('Undeclared auto-link roadmaps on github update:', err.message);
       }
 
+      // Recalculate today's attendance (updates streak and status)
+      const { recalculateAttendance } = require('./attendanceController');
+      const todayStr = new Date().toISOString().split('T')[0];
+      await recalculateAttendance(userId, todayStr);
+
       res.json(responseData);
 
     } catch (apiErr) {
@@ -145,6 +150,11 @@ exports.getGitHubData = async (req, res) => {
         console.warn('Undeclared auto-link roadmaps on github update:', err.message);
       }
 
+      // Recalculate today's attendance (updates streak and status)
+      const { recalculateAttendance } = require('./attendanceController');
+      const todayStr = new Date().toISOString().split('T')[0];
+      await recalculateAttendance(userId, todayStr);
+
       res.json(mockData);
     }
 
@@ -154,7 +164,7 @@ exports.getGitHubData = async (req, res) => {
   }
 };
 
-exports.getTodayCommitsCount = async (userId) => {
+exports.getCommitsCountForDate = async (userId, dateStr) => {
   let gitData = null;
   const cached = githubCache.get(userId);
   if (cached && Date.now() < cached.expiry) {
@@ -215,23 +225,26 @@ exports.getTodayCommitsCount = async (userId) => {
       githubCache.set(userId, { data, expiry: Date.now() + CACHE_DURATION_MS });
       gitData = data;
     } catch (err) {
-      console.error('Error fetching today commits count silently:', err.message);
+      console.error('Error fetching commits count silently:', err.message);
       return 0;
     }
   }
 
   if (!gitData || !gitData.commits) return 0;
 
-  const now = new Date();
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  
-  const todayCommits = gitData.commits.filter(commit => {
+  const targetCommits = gitData.commits.filter(commit => {
     const commitDate = new Date(commit.date);
     const commitDateStr = `${commitDate.getFullYear()}-${String(commitDate.getMonth() + 1).padStart(2, '0')}-${String(commitDate.getDate()).padStart(2, '0')}`;
-    return commitDateStr === todayStr;
+    return commitDateStr === dateStr;
   });
 
-  return todayCommits.length;
+  return targetCommits.length;
+};
+
+exports.getTodayCommitsCount = async (userId) => {
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return exports.getCommitsCountForDate(userId, todayStr);
 };
 
 // Generates high quality mock repositories for demonstration

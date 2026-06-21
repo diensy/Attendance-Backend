@@ -5,12 +5,21 @@ exports.getSmartGoals = async (req, res) => {
   const userId = req.user.id;
   try {
     // Auto-complete any active goals where the end_time has passed
-    await db.query(
+    const autoCompletedRes = await db.query(
       `UPDATE clover_smart_goals 
        SET status = 'Completed', actual_end_time = end_time
-       WHERE user_id = $1 AND status = 'Active' AND end_time <= CURRENT_TIMESTAMP`,
+       WHERE user_id = $1 AND status = 'Active' AND end_time <= CURRENT_TIMESTAMP
+       RETURNING end_time`,
       [userId]
     );
+
+    if (autoCompletedRes.rows.length > 0) {
+      const { recalculateAttendance } = require('./attendanceController');
+      for (const row of autoCompletedRes.rows) {
+        const dateStr = new Date(row.end_time).toISOString().split('T')[0];
+        await recalculateAttendance(userId, dateStr);
+      }
+    }
 
     const result = await db.query(
       `SELECT * FROM clover_smart_goals 
@@ -88,6 +97,11 @@ exports.completeSmartGoal = async (req, res) => {
        WHERE id = $1 AND user_id = $2 AND status = 'Active' RETURNING *`,
       [goalId, userId]
     );
+    if (result.rows.length > 0) {
+      const { recalculateAttendance } = require('./attendanceController');
+      const todayStr = new Date().toISOString().split('T')[0];
+      await recalculateAttendance(userId, todayStr);
+    }
     res.json(result.rows[0] || { message: 'Goal already completed or not found' });
   } catch (err) {
     console.error('Complete goal error:', err.message);

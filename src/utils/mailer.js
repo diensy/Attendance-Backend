@@ -1,6 +1,32 @@
 const nodemailer = require('nodemailer');
 require('dotenv').config();
 
+const MOTIVATIONAL_QUOTES = [
+  "Consistency is the key to unlocking your coding potential. Keep going! 🚀",
+  "Don't study to pass; study to understand and create things. 💻",
+  "The only way to learn a new programming language is by writing programs in it. — Dennis Ritchie",
+  "Small daily steps compound into giant leaps over time. Keep learning! 📈",
+  "Failure is simply the opportunity to begin again, this time more intelligently. — Henry Ford",
+  "First, solve the problem. Then, write the code. — John Johnson",
+  "Code is like humor. When you have to explain it, it’s bad. — Cory House",
+  "Clean code always looks like it was written by someone who cares. — Michael Feathers",
+  "Your streak represents your dedication. Keep that flame alive! 🔥",
+  "The expert in anything was once a beginner. Keep refining your skills!",
+  "Make it work, make it right, make it fast. — Kent Beck",
+  "Programming isn't about what you know; it's about what you can figure out. 🔍",
+  "Every line of code you write is a step closer to mastering your craft.",
+  "Belief in oneself is the first step on the ladder of success. 🌟",
+  "It's not a bug. It's an undocumented feature! 🐞 Keep debugging!",
+  "The secret of getting ahead is getting started. — Mark Twain",
+  "Productivity is being able to do things that you were never able to do before. ⚡",
+  "Coding is the closest thing we have to magic. Spark your potential! 🪄"
+];
+
+const getRandomQuote = () => {
+  const index = Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length);
+  return MOTIVATIONAL_QUOTES[index];
+};
+
 const createTransporter = () => {
   // Check if SMTP user/pass is set
   if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
@@ -180,6 +206,9 @@ const sendDailyGoalsReminderEmail = async (email, username, goals) => {
         </ul>
         
         <div style="text-align: center; margin-top: 35px; border-top: 1px solid #F1F5F9; padding-top: 20px; color: #94A3B8; font-size: 11px;">
+          <p style="font-style: italic; color: #047857; font-weight: 600; font-size: 13px; margin-bottom: 15px;">
+            "${getRandomQuote()}"
+          </p>
           <p>Stay consistent, build streaks, and unlock achievements on Code Clover 🍀.</p>
         </div>
       </div>
@@ -231,6 +260,9 @@ const sendSmartGoalReminderEmail = async (email, username, goal, minutesLeft) =>
         </p>
         
         <div style="text-align: center; margin-top: 35px; border-top: 1px solid #F1F5F9; padding-top: 20px; color: #94A3B8; font-size: 11px;">
+          <p style="font-style: italic; color: #10B981; font-weight: 600; font-size: 13px; margin-bottom: 15px;">
+            "${getRandomQuote()}"
+          </p>
           <p>Get ready to focus! Code Clover 🍀.</p>
         </div>
       </div>
@@ -283,6 +315,9 @@ const sendEarlyQuitEmail = async (email, username, goal, quitReason) => {
         </p>
         
         <div style="text-align: center; margin-top: 35px; border-top: 1px solid #F1F5F9; padding-top: 20px; color: #94A3B8; font-size: 11px;">
+          <p style="font-style: italic; color: #E11D48; font-weight: 600; font-size: 13px; margin-bottom: 15px;">
+            "${getRandomQuote()}"
+          </p>
           <p>Don't be discouraged! Take a break and get back to learning. Code Clover 🍀.</p>
         </div>
       </div>
