@@ -266,6 +266,16 @@ exports.updateProfile = async (req, res) => {
       [usernameClean, userId]
     );
 
+    // Invalidate github cache for this user
+    try {
+      const { githubCache } = require('./githubController');
+      if (githubCache) {
+        githubCache.delete(userId);
+      }
+    } catch (cacheErr) {
+      console.warn('Could not clear github cache on profile update:', cacheErr.message);
+    }
+
     res.json({
       message: 'Profile updated successfully',
       user: result.rows[0]

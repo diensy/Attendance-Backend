@@ -28,12 +28,6 @@ const fetchGitHubAPI = async (url) => {
 exports.getGitHubData = async (req, res) => {
   const userId = req.user.id;
 
-  // Check cache
-  const cached = githubCache.get(userId);
-  if (cached && Date.now() < cached.expiry) {
-    return res.json(cached.data);
-  }
-
   try {
     // Get user's github_username
     const userRes = await db.query(
@@ -42,6 +36,17 @@ exports.getGitHubData = async (req, res) => {
     );
 
     const githubUsername = userRes.rows[0]?.github_username;
+
+    // Check cache (and ensure it belongs to the current username)
+    const cached = githubCache.get(userId);
+    const isUsernameMatch = cached && (
+      (cached.data.hasUsername === false && !githubUsername) ||
+      (cached.data.hasUsername === true && cached.data.username === githubUsername)
+    );
+
+    if (cached && Date.now() < cached.expiry && isUsernameMatch) {
+      return res.json(cached.data);
+    }
 
     if (!githubUsername) {
       const emptyData = {
