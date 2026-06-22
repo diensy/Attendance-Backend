@@ -58,24 +58,14 @@ exports.getGitHubData = async (req, res) => {
   const userId = req.user.id;
 
   try {
-    // Get user's github_username
+    // Get user's github_username and github_data
     const userRes = await db.query(
-      'SELECT github_username FROM clover_users WHERE id = $1',
+      'SELECT github_username, github_data FROM clover_users WHERE id = $1',
       [userId]
     );
 
     const githubUsername = userRes.rows[0]?.github_username;
-
-    // Check cache (and ensure it belongs to the current username)
-    const cached = githubCache.get(userId);
-    const isUsernameMatch = cached && (
-      (cached.data.hasUsername === false && !githubUsername) ||
-      (cached.data.hasUsername === true && cached.data.username === githubUsername)
-    );
-
-    if (cached && Date.now() < cached.expiry && isUsernameMatch) {
-      return res.json(cached.data);
-    }
+    const dbGithubData = userRes.rows[0]?.github_data;
 
     if (!githubUsername) {
       const emptyData = {
@@ -83,9 +73,12 @@ exports.getGitHubData = async (req, res) => {
         repos: getMockRepos(),
         commits: getMockCommits()
       };
-      // Don't cache empty profiles for long to allow instant updates
-      githubCache.set(userId, { data: emptyData, expiry: Date.now() + 5000 });
       return res.json(emptyData);
+    }
+
+    // Use database cached data if available
+    if (dbGithubData && dbGithubData.username === githubUsername && !dbGithubData.error) {
+      return res.json(dbGithubData);
     }
 
     try {
@@ -128,7 +121,11 @@ exports.getGitHubData = async (req, res) => {
         badgeUnlocked
       };
 
-      githubCache.set(userId, { data: responseData, expiry: Date.now() + CACHE_DURATION_MS });
+      // Save to Database Cache
+      await db.query(
+        'UPDATE clover_users SET github_data = $1 WHERE id = $2',
+        [responseData, userId]
+      );
 
       // Trigger silent auto-link of roadmaps to parse commit message tags
       try {
@@ -168,9 +165,7 @@ exports.getGitHubData = async (req, res) => {
         error: errorMsg
       };
 
-      // Cache the error state for 10 seconds so it doesn't slam the API but permits quick retries
-      githubCache.set(userId, { data: errorData, expiry: Date.now() + 10000 });
-
+      // In case of error, just return errorData without saving to DB so they can retry later
       res.json(errorData);
     }
 
@@ -182,15 +177,16 @@ exports.getGitHubData = async (req, res) => {
 
 exports.getCommitsCountForDate = async (userId, dateStr) => {
   let gitData = null;
-  const cached = githubCache.get(userId);
-  if (cached && Date.now() < cached.expiry) {
-    gitData = cached.data;
-  } else {
-    try {
-      const userRes = await db.query('SELECT github_username FROM clover_users WHERE id = $1', [userId]);
-      const githubUsername = userRes.rows[0]?.github_username;
-      if (!githubUsername) return 0;
-      
+  try {
+    const userRes = await db.query('SELECT github_username, github_data FROM clover_users WHERE id = $1', [userId]);
+    const githubUsername = userRes.rows[0]?.github_username;
+    const dbGithubData = userRes.rows[0]?.github_data;
+    
+    if (!githubUsername) return 0;
+
+    if (dbGithubData && dbGithubData.username === githubUsername && !dbGithubData.error) {
+      gitData = dbGithubData;
+    } else {
       let data;
       try {
         const repos = await fetchGitHubAPI(`https://api.github.com/users/${githubUsername}/repos?sort=updated&per_page=6`);
@@ -228,12 +224,15 @@ exports.getCommitsCountForDate = async (userId, dateStr) => {
         };
       }
       
-      githubCache.set(userId, { data, expiry: Date.now() + CACHE_DURATION_MS });
+      // Save data silently to db
+      if (data && !data.error) {
+        await db.query('UPDATE clover_users SET github_data = $1 WHERE id = $2', [data, userId]);
+      }
       gitData = data;
-    } catch (err) {
-      console.error('Error fetching commits count silently:', err.message);
-      return 0;
-    }
+    } // Close the else block
+  } catch (err) {
+    console.error('Error fetching commits count silently:', err.message);
+    return 0;
   }
 
   if (!gitData || !gitData.commits) return 0;

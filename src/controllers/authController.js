@@ -262,7 +262,7 @@ exports.updateProfile = async (req, res) => {
     }
 
     const result = await db.query(
-      'UPDATE clover_users SET github_username = $1 WHERE id = $2 RETURNING id, username, email, github_username, is_verified, profile_pic_url, security_question',
+      'UPDATE clover_users SET github_username = $1, github_data = NULL WHERE id = $2 RETURNING id, username, email, github_username, is_verified, profile_pic_url, security_question',
       [usernameClean, userId]
     );
 

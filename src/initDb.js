@@ -47,6 +47,16 @@ const initDatabase = async () => {
       console.warn('⚠️ [Database] smart_goals last_heartbeat migration warning:', migErr.message);
     }
 
+    // Migrate clover_users to add github_data column if needed
+    try {
+      await db.query(`
+        ALTER TABLE clover_users ADD COLUMN IF NOT EXISTS github_data JSONB DEFAULT NULL;
+      `);
+      console.log('🍀 [Database] clover_users github_data verified/migrated.');
+    } catch (migErr) {
+      console.warn('⚠️ [Database] clover_users github_data migration warning:', migErr.message);
+    }
+
     console.log('🍀 [Database] Tables initialized/verified successfully.');
   } catch (err) {
     console.error('❌ [Database] Failed to initialize tables:', err.message);
