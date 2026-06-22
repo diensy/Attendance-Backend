@@ -334,11 +334,69 @@ const sendEarlyQuitEmail = async (email, username, goal, quitReason) => {
   }
 };
 
+const sendGoalCompletedEmail = async (email, username, goal) => {
+  const transporter = createTransporter();
+
+  if (!transporter) {
+    console.log('\n======================================================');
+    console.log(`📨 [Mail Development Fallback - Goal Completed]`);
+    console.log(`Sending to Email: ${email}`);
+    console.log(`Goal Completed for: ${username}`);
+    console.log(`Goal: ${goal.title}`);
+    console.log('======================================================\n');
+    return { devFallback: true };
+  }
+
+  const durationMin = Math.round((new Date(goal.end_time) - new Date(goal.start_time)) / 60000);
+
+  const mailOptions = {
+    from: `"Code Clover 🍀" <${process.env.SMTP_USER}>`,
+    to: email,
+    subject: `Code Clover 🍀 Goal Completed Successfully: ${goal.title}! 🎉`,
+    html: `
+      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 550px; margin: 0 auto; border: 1px solid #E2E8F0; border-radius: 20px; padding: 30px; background-color: #FFFFFF;">
+        <div style="text-align: center; border-bottom: 1px solid #F1F5F9; padding-bottom: 15px; margin-bottom: 20px;">
+          <span style="font-size: 40px;">🍀</span>
+          <h2 style="color: #10B981; margin: 5px 0 0 0; font-weight: 800; letter-spacing: -0.5px;">Session Completed! 🎉</h2>
+          <p style="color: #94A3B8; font-size: 12px; margin: 2px 0 0 0;">Student: ${username} • Date: ${new Date().toLocaleDateString()}</p>
+        </div>
+        
+        <p style="color: #334155; font-size: 14px; line-height: 1.6;">
+          Hello <strong>${username}</strong>,<br/><br/>
+          Congratulations! You have successfully completed your scheduled study session for <strong>${goal.title}</strong>!
+        </p>
+        <p style="color: #334155; font-size: 14px; line-height: 1.6;">
+          ⏱️ <strong>Session Duration:</strong> ${durationMin} minutes<br/>
+          🎯 <strong>Reason:</strong> ${goal.reason || 'To learn and grow!'}
+        </p>
+        
+        <div style="text-align: center; margin-top: 35px; border-top: 1px solid #F1F5F9; padding-top: 20px; color: #94A3B8; font-size: 11px;">
+          <p style="font-style: italic; color: #10B981; font-weight: 600; font-size: 13px; margin-bottom: 15px;">
+            "${getRandomQuote()}"
+          </p>
+          <p style="color: #475569;">Your study consistency logs have been updated. Keep that streak burning! 🔥</p>
+          <p>Code Clover 🍀.</p>
+        </div>
+      </div>
+    `,
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`🍀 [Mailer] Goal completion email successfully sent to: ${email}`);
+    return info;
+  } catch (err) {
+    console.error(`❌ [Mailer] Failed to email goal completion to ${email}:`, err.message);
+    return { error: err.message };
+  }
+};
+
 module.exports = {
   sendVerificationEmail,
   sendStudyPlanEmail,
   sendDailyGoalsReminderEmail,
   sendSmartGoalReminderEmail,
-  sendEarlyQuitEmail
+  sendEarlyQuitEmail,
+  sendGoalCompletedEmail
 };
 

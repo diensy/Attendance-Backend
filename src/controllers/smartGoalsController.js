@@ -162,3 +162,23 @@ exports.handleEarlyLogout = async (req, res) => {
     res.status(500).json({ message: 'Server error processing early logout' });
   }
 };
+
+exports.smartGoalHeartbeat = async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const result = await db.query(
+      `UPDATE clover_smart_goals
+       SET last_heartbeat = CURRENT_TIMESTAMP
+       WHERE user_id = $1 
+         AND status = 'Active' 
+         AND start_time <= CURRENT_TIMESTAMP 
+         AND end_time > CURRENT_TIMESTAMP
+       RETURNING *`,
+      [userId]
+    );
+    res.json({ message: 'Heartbeat registered', updatedCount: result.rows.length, activeGoals: result.rows });
+  } catch (err) {
+    console.error('Smart goal heartbeat error:', err.message);
+    res.status(500).json({ message: 'Server error registering heartbeat' });
+  }
+};

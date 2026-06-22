@@ -145,6 +145,7 @@ ALTER TABLE clover_courses ADD COLUMN IF NOT EXISTS subject VARCHAR(50) DEFAULT 
 ALTER TABLE clover_course_videos ADD COLUMN IF NOT EXISTS start_seconds INTEGER DEFAULT 0;
 ALTER TABLE clover_roadmaps ADD COLUMN IF NOT EXISTS subject VARCHAR(50) DEFAULT 'General';
 ALTER TABLE clover_roadmap_items ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ DEFAULT NULL;
+ALTER TABLE clover_smart_goals ADD COLUMN IF NOT EXISTS last_heartbeat TIMESTAMPTZ DEFAULT NULL;
 
 -- Create User Preferences table
 CREATE TABLE IF NOT EXISTS clover_user_preferences (
@@ -180,6 +181,7 @@ CREATE TABLE IF NOT EXISTS clover_smart_goals (
   status VARCHAR(20) DEFAULT 'Active', -- 'Active', 'Completed', 'Interrupted'
   actual_end_time TIMESTAMPTZ DEFAULT NULL,
   quit_reason VARCHAR(255) DEFAULT NULL,
+  last_heartbeat TIMESTAMPTZ DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

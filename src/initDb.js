@@ -37,6 +37,16 @@ const initDatabase = async () => {
       console.warn('⚠️ [Database] roadmap_items migration warning:', migErr.message);
     }
 
+    // Migrate existing smart goals to add last_heartbeat column if needed
+    try {
+      await db.query(`
+        ALTER TABLE clover_smart_goals ADD COLUMN IF NOT EXISTS last_heartbeat TIMESTAMPTZ DEFAULT NULL;
+      `);
+      console.log('🍀 [Database] smart_goals last_heartbeat verified/migrated.');
+    } catch (migErr) {
+      console.warn('⚠️ [Database] smart_goals last_heartbeat migration warning:', migErr.message);
+    }
+
     console.log('🍀 [Database] Tables initialized/verified successfully.');
   } catch (err) {
     console.error('❌ [Database] Failed to initialize tables:', err.message);

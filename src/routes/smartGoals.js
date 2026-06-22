@@ -8,6 +8,9 @@ router.use(auth);
 // Get today's smart goals
 router.get('/', smartGoalsController.getSmartGoals);
 
+// Heartbeat ping
+router.post('/heartbeat', smartGoalsController.smartGoalHeartbeat);
+
 // Create a new smart goal
 router.post('/', smartGoalsController.createSmartGoal);
 
