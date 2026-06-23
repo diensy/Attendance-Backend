@@ -99,31 +99,77 @@ exports.getStats = async (req, res) => {
     });
     const topicsLearnedToday = Array.from(topicsSet);
 
-    // C. Fetch completed and total todos due today
-    const todosTodayRes = await db.query(
-      'SELECT COUNT(*) as total, COUNT(CASE WHEN is_completed = true THEN 1 END) as completed FROM clover_todos WHERE user_id = $1 AND due_date = $2',
+    // C. Fetch completed and total coding challenges
+    const codingChallengesRes = await db.query(
+      'SELECT COUNT(*) as total, COUNT(CASE WHEN is_completed = true THEN 1 END) as completed FROM clover_study_ide_tasks WHERE user_id = $1',
+      [userId]
+    );
+    const codingTotal = parseInt(codingChallengesRes.rows[0].total || '0');
+    const codingCompleted = parseInt(codingChallengesRes.rows[0].completed || '0');
+
+    // Fetch coding challenges completed today
+    const codingTodayRes = await db.query(
+      'SELECT COUNT(*) FROM clover_study_ide_tasks WHERE user_id = $1 AND is_completed = true AND completed_at::date = $2',
       [userId, todayStr]
     );
-    const todosTotalToday = parseInt(todosTodayRes.rows[0].total || '0');
-    const todosCompletedToday = parseInt(todosTodayRes.rows[0].completed || '0');
+    const codingCompletedToday = parseInt(codingTodayRes.rows[0].count || '0');
 
-    // D. Fetch GitHub commits today
+    // D. Fetch smart goals completed today vs scheduled today
+    const sgTodayRes = await db.query(
+      "SELECT COUNT(*) as total, COUNT(CASE WHEN status = 'Completed' THEN 1 END) as completed FROM clover_smart_goals WHERE user_id = $1 AND created_at::date = $2",
+      [userId, todayStr]
+    );
+    const sgTotalToday = parseInt(sgTodayRes.rows[0].total || '0');
+    const sgCompletedToday = parseInt(sgTodayRes.rows[0].completed || '0');
+
+    // E. Fetch general smart goals stats (Completed, Interrupted, Active counts)
+    const smartGoalsStatsRes = await db.query(
+      "SELECT status, COUNT(*)::integer as count FROM clover_smart_goals WHERE user_id = $1 GROUP BY status",
+      [userId]
+    );
+    const smartGoalsStats = smartGoalsStatsRes.rows;
+
+    // F. Fetch course progress stats (videos total vs watched per course)
+    const courseProgressStatsRes = await db.query(
+      `SELECT c.title, c.subject, COUNT(v.id)::integer as total_videos, COUNT(CASE WHEN p.is_completed = true THEN 1 END)::integer as watched_videos
+       FROM clover_courses c
+       LEFT JOIN clover_course_videos v ON c.id = v.course_id
+       LEFT JOIN clover_user_video_progress p ON v.id = p.video_id AND p.user_id = $1
+       WHERE c.user_id = $1
+       GROUP BY c.id, c.title, c.subject`,
+      [userId]
+    );
+    const courseProgressStats = courseProgressStatsRes.rows;
+
+    // G. Fetch coding challenges progress by subject
+    const codingSubjectStatsRes = await db.query(
+      `SELECT subject, COUNT(*)::integer as total, COUNT(CASE WHEN is_completed = true THEN 1 END)::integer as completed 
+       FROM clover_study_ide_tasks 
+       WHERE user_id = $1 
+       GROUP BY subject`,
+      [userId]
+    );
+    const codingSubjectStats = codingSubjectStatsRes.rows;
+
+    // H. Fetch GitHub commits today
     const { getTodayCommitsCount } = require('./githubController');
     const todayCommits = await getTodayCommitsCount(userId);
 
-    // E. Calculate weighted productivity score components
+    // I. Calculate weighted productivity score components (Max 100)
     // 1. Attendance (30%)
     let attendancePts = 0;
     if (todayStatus === 'Present') attendancePts = 30;
     else if (todayStatus === 'Half Day') attendancePts = 15;
 
-    // 2. Focus Time (25%) - 2 hours (7200 seconds) target
-    const focusPts = Math.min(25, (todayFocusSeconds / 7200) * 25);
+    // 2. Focus Time (30%) - 2 hours (7200 seconds) target
+    const focusPts = Math.min(30, (todayFocusSeconds / 7200) * 30);
 
-    // 3. Todo Complete (25%)
-    let todoPts = 0;
-    if (todosTotalToday > 0) {
-      todoPts = (todosCompletedToday / todosTotalToday) * 25;
+    // 3. Smart Sessions / Coding Activity (20%)
+    let smartCodingPts = 0;
+    if (codingCompletedToday > 0 || sgCompletedToday > 0) {
+      smartCodingPts = 20;
+    } else if (sgTotalToday > 0) {
+      smartCodingPts = (sgCompletedToday / sgTotalToday) * 20;
     }
 
     // 4. GitHub Commits (20%) - 3 commits = 20 pts, 2 commits = 14 pts, 1 commit = 8 pts, 0 commits = 0 pts
@@ -132,12 +178,12 @@ exports.getStats = async (req, res) => {
     else if (todayCommits === 2) githubPts = 14;
     else if (todayCommits === 1) githubPts = 8;
 
-    const totalProductivityScore = Math.round(attendancePts + focusPts + todoPts + githubPts);
+    const totalProductivityScore = Math.round(attendancePts + focusPts + smartCodingPts + githubPts);
 
     const productivityBreakdown = {
       attendance: Number(attendancePts.toFixed(1)),
       focusTime: Number(focusPts.toFixed(1)),
-      todos: Number(todoPts.toFixed(1)),
+      smartCoding: Number(smartCodingPts.toFixed(1)),
       github: Number(githubPts.toFixed(1)),
       total: totalProductivityScore
     };
@@ -219,6 +265,10 @@ exports.getStats = async (req, res) => {
       [userId]
     );
 
+    // 5. Fetch user XP points
+    const xpRes = await db.query('SELECT xp_points FROM clover_users WHERE id = $1', [userId]);
+    const xpPoints = xpRes.rows[0]?.xp_points || 0;
+
     res.json({
       totalPresent,
       totalDays,
@@ -227,10 +277,15 @@ exports.getStats = async (req, res) => {
       streak,
       badges: badgeRes.rows,
       newBadgesUnlocked: newBadges,
+      xpPoints,
       
-      // Expanded Study OS Stats
-      todosCompletedToday,
-      todosTotalToday,
+      // Expanded Study OS Stats (New features data)
+      codingTotal,
+      codingCompleted,
+      codingCompletedToday,
+      smartGoalsStats,
+      courseProgressStats,
+      codingSubjectStats,
       todayCommits,
       todayFocusSeconds,
       productivityScore: totalProductivityScore,

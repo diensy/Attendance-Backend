@@ -21,7 +21,6 @@ const migrate = async () => {
     
     // We can run the entire schema block
     await db.query(sql);
-
     // Verify individual tables exist in database
     const tablesToVerify = [
       'clover_users',
@@ -34,7 +33,11 @@ const migrate = async () => {
       'clover_course_videos',
       'clover_user_video_progress',
       'clover_roadmaps',
-      'clover_roadmap_items'
+      'clover_roadmap_items',
+      'clover_smart_goals',
+      'clover_user_preferences',
+      'clover_chat_history',
+      'clover_study_ide_tasks'
     ];
 
     console.log('\n🔍 [Migration] Verifying table status:');

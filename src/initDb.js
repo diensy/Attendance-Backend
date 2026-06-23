@@ -68,6 +68,16 @@ const initDatabase = async () => {
       console.warn('⚠️ [Database] clover_users github_data migration warning:', migErr.message);
     }
 
+    // Migrate clover_users to add last_login_bonus_date column if needed
+    try {
+      await db.query(`
+        ALTER TABLE clover_users ADD COLUMN IF NOT EXISTS last_login_bonus_date DATE DEFAULT NULL;
+      `);
+      console.log('🍀 [Database] clover_users last_login_bonus_date verified/migrated.');
+    } catch (migErr) {
+      console.warn('⚠️ [Database] clover_users last_login_bonus_date migration warning:', migErr.message);
+    }
+
     console.log('🍀 [Database] Tables initialized/verified successfully.');
   } catch (err) {
     console.error('❌ [Database] Failed to initialize tables:', err.message);

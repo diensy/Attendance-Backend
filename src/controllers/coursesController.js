@@ -799,6 +799,8 @@ exports.updateVideoProgress = async (req, res) => {
       [userId, videoId]
     );
 
+    const oldWatched = currentProgress.rows.length > 0 ? (currentProgress.rows[0].watched_seconds || 0) : 0;
+
     let result;
     if (currentProgress.rows.length === 0) {
       result = await db.query(
@@ -813,6 +815,24 @@ exports.updateVideoProgress = async (req, res) => {
          WHERE user_id = $3 AND video_id = $4 RETURNING *`,
         [watched_seconds || 0, notes, userId, videoId]
       );
+    }
+
+    // Award XP: 1 XP point per 360 seconds (10 XP per hour) of new video watched.
+    // Exploit-proof to prevent gaining points on rewinds.
+    const newWatched = watched_seconds || 0;
+    if (newWatched > oldWatched) {
+      const oldXP = Math.floor(oldWatched / 360);
+      const newXP = Math.floor(newWatched / 360);
+      const xpToAward = newXP - oldXP;
+      
+      if (xpToAward > 0) {
+        try {
+          const { awardXP } = require('./timerController');
+          await awardXP(userId, xpToAward);
+        } catch (xpErr) {
+          console.warn('XP award failed in updateVideoProgress:', xpErr.message);
+        }
+      }
     }
 
     res.json({
@@ -962,10 +982,19 @@ exports.completeVideo = async (req, res) => {
       [`\n\n${aiSummary}`, userId, todayStr]
     );
 
+    // 8. Award XP: +2 XP for first-time video completion
+    try {
+      const { awardXP } = require('./timerController');
+      await awardXP(userId, 2);
+    } catch (xpErr) {
+      console.warn('XP award skipped:', xpErr.message);
+    }
+
     res.json({
       message: 'Video completed successfully! Attendance and tasks synced.',
       durationHours,
-      aiSummary
+      aiSummary,
+      xpAwarded: 2
     });
 
   } catch (err) {
@@ -973,6 +1002,7 @@ exports.completeVideo = async (req, res) => {
     res.status(500).json({ message: 'Server error registering video completion' });
   }
 };
+
 
 // ─── Roadmaps Feature Controllers ─────────────────────────────────────────────
 

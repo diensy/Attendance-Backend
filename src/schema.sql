@@ -165,6 +165,19 @@ CREATE TABLE IF NOT EXISTS clover_user_preferences (
 -- Safe Alterations for User Preferences
 ALTER TABLE clover_user_preferences ADD COLUMN IF NOT EXISTS auto_create_smart_goals BOOLEAN DEFAULT false;
 
+-- ─── XP Points & Active Timer Persistence ────────────────────────────────────
+-- XP points earned by completing focus sessions and videos
+ALTER TABLE clover_users ADD COLUMN IF NOT EXISTS xp_points INTEGER DEFAULT 0;
+ALTER TABLE clover_users ADD COLUMN IF NOT EXISTS last_login_bonus_date DATE DEFAULT NULL;
+-- Active focus timer state persisted to DB so it survives page navigation
+ALTER TABLE clover_users ADD COLUMN IF NOT EXISTS active_timer_mode VARCHAR(20) DEFAULT NULL;
+ALTER TABLE clover_users ADD COLUMN IF NOT EXISTS active_timer_time_left INTEGER DEFAULT NULL;
+ALTER TABLE clover_users ADD COLUMN IF NOT EXISTS active_timer_stopwatch_seconds INTEGER DEFAULT NULL;
+ALTER TABLE clover_users ADD COLUMN IF NOT EXISTS active_timer_custom_minutes INTEGER DEFAULT NULL;
+ALTER TABLE clover_users ADD COLUMN IF NOT EXISTS active_timer_started_at TIMESTAMPTZ DEFAULT NULL;
+
+
+
 -- Create Chat History table (optional but good for AI context memory)
 CREATE TABLE IF NOT EXISTS clover_chat_history (
   id SERIAL PRIMARY KEY,

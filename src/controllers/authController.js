@@ -113,8 +113,19 @@ exports.login = async (req, res) => {
       expiresIn: '7d',
     });
 
+    // Check and award daily login bonus
+    const loginBonusAwarded = await exports.checkAndAwardDailyBonus(user.id);
+    
+    // Fetch latest user data including updated xp_points
+    const updatedUserRes = await db.query(
+      'SELECT xp_points FROM clover_users WHERE id = $1',
+      [user.id]
+    );
+    const xpPoints = updatedUserRes.rows[0]?.xp_points || 0;
+
     res.json({
       token,
+      loginBonusAwarded,
       user: {
         id: user.id,
         username: user.username,
@@ -122,7 +133,8 @@ exports.login = async (req, res) => {
         github_username: user.github_username,
         is_verified: user.is_verified,
         profile_pic_url: user.profile_pic_url,
-        security_question: user.security_question
+        security_question: user.security_question,
+        xp_points: xpPoints
       }
     });
   } catch (err) {
@@ -527,6 +539,43 @@ exports.forgotPasswordVerifyQuestion = async (req, res) => {
   } catch (err) {
     console.error('Forgot Password Verify Question Error:', err.message);
     res.status(500).json({ message: 'Server error resetting password' });
+  }
+};
+
+exports.checkAndAwardDailyBonus = async (userId) => {
+  try {
+    const localDateObj = new Date();
+    const todayStr = localDateObj.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+    // Get user's last login bonus date
+    const userRes = await db.query(
+      'SELECT last_login_bonus_date FROM clover_users WHERE id = $1',
+      [userId]
+    );
+
+    if (userRes.rows.length === 0) return false;
+
+    const lastBonusDate = userRes.rows[0].last_login_bonus_date;
+    
+    // Format lastBonusDate to YYYY-MM-DD if it exists
+    let lastBonusDateStr = null;
+    if (lastBonusDate) {
+      const d = new Date(lastBonusDate);
+      lastBonusDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    if (!lastBonusDateStr || lastBonusDateStr !== todayStr) {
+      // Award 1 XP point
+      await db.query(
+        'UPDATE clover_users SET xp_points = COALESCE(xp_points, 0) + 1, last_login_bonus_date = $1 WHERE id = $2',
+        [todayStr, userId]
+      );
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.error('Error checking daily login bonus:', err.message);
+    return false;
   }
 };
 

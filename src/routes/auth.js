@@ -56,11 +56,23 @@ router.post('/forgot-password/verify-question', authController.forgotPasswordVer
 // @desc    Get user info
 router.get('/me', auth, async (req, res) => {
   try {
+    const authController = require('../controllers/authController');
+    const loginBonusAwarded = await authController.checkAndAwardDailyBonus(req.user.id);
+
     const user = await db.query(
-      'SELECT id, username, email, github_username, is_verified, profile_pic_url, security_question, created_at FROM clover_users WHERE id = $1',
+      'SELECT id, username, email, github_username, is_verified, profile_pic_url, security_question, xp_points, created_at FROM clover_users WHERE id = $1',
       [req.user.id]
     );
-    res.json(user.rows[0]);
+
+    if (user.rows.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const userData = {
+      ...user.rows[0],
+      loginBonusAwarded
+    };
+    res.json(userData);
   } catch (err) {
     console.error(err.message);
     res.status(500).send('Server Error');
