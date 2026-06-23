@@ -47,6 +47,17 @@ const initDatabase = async () => {
       console.warn('⚠️ [Database] smart_goals last_heartbeat migration warning:', migErr.message);
     }
 
+    // Migrate existing smart goals to add reminder flags if needed
+    try {
+      await db.query(`
+        ALTER TABLE clover_smart_goals ADD COLUMN IF NOT EXISTS reminder_sent_30 BOOLEAN DEFAULT FALSE;
+        ALTER TABLE clover_smart_goals ADD COLUMN IF NOT EXISTS reminder_sent_60 BOOLEAN DEFAULT FALSE;
+      `);
+      console.log('🍀 [Database] smart_goals reminder flags verified/migrated.');
+    } catch (migErr) {
+      console.warn('⚠️ [Database] smart_goals reminder flags migration warning:', migErr.message);
+    }
+
     // Migrate clover_users to add github_data column if needed
     try {
       await db.query(`

@@ -193,7 +193,7 @@ const checkSmartGoalReminders = async (now) => {
       `SELECT g.*, u.username, u.email 
        FROM clover_smart_goals g 
        JOIN clover_users u ON g.user_id = u.id 
-       WHERE g.status = 'Active'`
+       WHERE g.status = 'Active' AND (g.reminder_sent_30 = FALSE OR g.reminder_sent_60 = FALSE)`
     );
 
     for (const goal of goalsRes.rows) {
@@ -201,13 +201,23 @@ const checkSmartGoalReminders = async (now) => {
       const diffMs = startTime - now;
       const diffMins = Math.floor(diffMs / 60000);
 
-      // We use exactly 60 or exactly 30 so it only triggers once during that minute.
-      if (diffMins === 60) {
+      // Send 60-min reminder: starting in <= 60 mins and >= 45 mins, and not yet sent
+      if (diffMins <= 60 && diffMins >= 45 && !goal.reminder_sent_60) {
         console.log(`⏰ [Scheduler] Sending 60-min reminder to ${goal.email} for goal: ${goal.title}`);
-        await sendSmartGoalReminderEmail(goal.email, goal.username, goal, 60);
-      } else if (diffMins === 30) {
+        await sendSmartGoalReminderEmail(goal.email, goal.username, goal, diffMins);
+        await db.query(
+          `UPDATE clover_smart_goals SET reminder_sent_60 = TRUE WHERE id = $1`,
+          [goal.id]
+        );
+      }
+      // Send 30-min reminder: starting in <= 30 mins and >= 15 mins, and not yet sent
+      else if (diffMins <= 30 && diffMins >= 15 && !goal.reminder_sent_30) {
         console.log(`⏰ [Scheduler] Sending 30-min reminder to ${goal.email} for goal: ${goal.title}`);
-        await sendSmartGoalReminderEmail(goal.email, goal.username, goal, 30);
+        await sendSmartGoalReminderEmail(goal.email, goal.username, goal, diffMins);
+        await db.query(
+          `UPDATE clover_smart_goals SET reminder_sent_30 = TRUE WHERE id = $1`,
+          [goal.id]
+        );
       }
     }
   } catch (err) {
