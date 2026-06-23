@@ -218,12 +218,28 @@ exports.quickQuitReason = async (req, res) => {
 
   try {
     // Only update if it's currently null, or maybe always allow updating. We'll always allow updating just in case they clicked the wrong one.
-    await db.query(
+    const updated = await db.query(
       `UPDATE clover_smart_goals 
        SET quit_reason = $1 
-       WHERE id = $2 AND status = 'Interrupted'`,
+       WHERE id = $2 AND status = 'Interrupted'
+       RETURNING *`,
       [reason, goalId]
     );
+
+    if (updated.rows.length > 0) {
+      const goalRes = await db.query(
+        `SELECT g.*, u.email, u.username 
+         FROM clover_smart_goals g 
+         JOIN clover_users u ON g.user_id = u.id 
+         WHERE g.id = $1`,
+        [goalId]
+      );
+      if (goalRes.rows.length > 0) {
+        const goal = goalRes.rows[0];
+        const { sendEarlyQuitEmail } = require('../utils/mailer');
+        sendEarlyQuitEmail(goal.email, goal.username, goal, reason).catch(console.error);
+      }
+    }
 
     // Render a nice HTML response
     const htmlResponse = `
