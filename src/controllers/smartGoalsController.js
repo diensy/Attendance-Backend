@@ -86,6 +86,31 @@ exports.interruptSmartGoal = async (req, res) => {
   }
 };
 
+exports.resumeSmartGoal = async (req, res) => {
+  const userId = req.user.id;
+  const goalId = req.params.id;
+
+  try {
+    const result = await db.query(
+      `UPDATE clover_smart_goals 
+       SET status = 'Active', 
+           actual_end_time = NULL, 
+           quit_reason = NULL,
+           last_heartbeat = CURRENT_TIMESTAMP
+       WHERE id = $1 AND user_id = $2 AND status = 'Interrupted' RETURNING *`,
+      [goalId, userId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Interrupted goal not found.' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Resume goal error:', err.message);
+    res.status(500).json({ message: 'Server error resuming goal' });
+  }
+};
+
 exports.completeSmartGoal = async (req, res) => {
   const userId = req.user.id;
   const goalId = req.params.id;
@@ -180,5 +205,53 @@ exports.smartGoalHeartbeat = async (req, res) => {
   } catch (err) {
     console.error('Smart goal heartbeat error:', err.message);
     res.status(500).json({ message: 'Server error registering heartbeat' });
+  }
+};
+
+exports.quickQuitReason = async (req, res) => {
+  const goalId = req.params.id;
+  const reason = req.query.reason;
+  
+  if (!reason) {
+    return res.status(400).send('Reason is required');
+  }
+
+  try {
+    // Only update if it's currently null, or maybe always allow updating. We'll always allow updating just in case they clicked the wrong one.
+    await db.query(
+      `UPDATE clover_smart_goals 
+       SET quit_reason = $1 
+       WHERE id = $2 AND status = 'Interrupted'`,
+      [reason, goalId]
+    );
+
+    // Render a nice HTML response
+    const htmlResponse = `
+      <html>
+        <head>
+          <title>Code Clover - Reason Recorded</title>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #F8FAFC; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+            .container { background-color: #FFFFFF; padding: 40px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); text-align: center; max-width: 400px; border: 1px solid #E2E8F0; }
+            .icon { font-size: 50px; margin-bottom: 20px; }
+            h2 { color: #0F172A; margin: 0 0 10px 0; }
+            p { color: #64748B; line-height: 1.6; margin-bottom: 20px; }
+            .reason { color: #E11D48; font-weight: bold; background: #FFF1F2; padding: 5px 10px; border-radius: 6px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="icon">🍀</div>
+            <h2>Reason Recorded!</h2>
+            <p>Your session interruption reason has been successfully recorded as:<br/><br/><span class="reason">${reason}</span></p>
+            <p style="font-size: 13px; margin-top: 30px;">You can now close this tab.</p>
+          </div>
+        </body>
+      </html>
+    `;
+    res.send(htmlResponse);
+  } catch (err) {
+    console.error('Quick quit error:', err.message);
+    res.status(500).send('Server error recording reason');
   }
 };

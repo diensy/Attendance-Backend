@@ -160,6 +160,9 @@ CREATE TABLE IF NOT EXISTS clover_user_preferences (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Safe Alterations for User Preferences
+ALTER TABLE clover_user_preferences ADD COLUMN IF NOT EXISTS auto_create_smart_goals BOOLEAN DEFAULT false;
+
 -- Create Chat History table (optional but good for AI context memory)
 CREATE TABLE IF NOT EXISTS clover_chat_history (
   id SERIAL PRIMARY KEY,

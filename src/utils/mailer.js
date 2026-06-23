@@ -293,6 +293,27 @@ const sendEarlyQuitEmail = async (email, username, goal, quitReason) => {
     return { devFallback: true };
   }
 
+  const backendUrl = process.env.API_URL || 'http://localhost:5000/api';
+  let optionsHtml = '';
+  
+  if (quitReason === 'Session was abandoned. Reason required.') {
+    const reasons = ['Office Work', 'Family Work', 'Tired', 'Emergency', 'Lost Focus', 'Other'];
+    const buttons = reasons.map(r => `
+      <a href="${backendUrl}/smart-goals/${goal.id}/quick-quit?reason=${encodeURIComponent(r)}" style="display: inline-block; padding: 10px 15px; margin: 5px; background-color: #F1F5F9; color: #334155; text-decoration: none; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid #E2E8F0;">
+        ${r}
+      </a>
+    `).join('');
+    
+    optionsHtml = `
+      <div style="margin-top: 20px; text-align: center;">
+        <p style="font-size: 13px; color: #64748B; font-weight: 600; margin-bottom: 10px; text-transform: uppercase;">Please select your reason:</p>
+        <div>
+          ${buttons}
+        </div>
+      </div>
+    `;
+  }
+
   const mailOptions = {
     from: `"Code Clover 🍀" <${process.env.SMTP_USER}>`,
     to: email,
@@ -313,6 +334,7 @@ const sendEarlyQuitEmail = async (email, username, goal, quitReason) => {
           <strong>Recorded Reason:</strong><br/>
           <span style="color: #E11D48;">${quitReason}</span>
         </p>
+        ${optionsHtml}
         
         <div style="text-align: center; margin-top: 35px; border-top: 1px solid #F1F5F9; padding-top: 20px; color: #94A3B8; font-size: 11px;">
           <p style="font-style: italic; color: #E11D48; font-weight: 600; font-size: 13px; margin-bottom: 15px;">

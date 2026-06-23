@@ -356,7 +356,8 @@ exports.getPreferences = async (req, res) => {
         daily_hours: 2.0,
         office_time_start: '10:00:00',
         office_time_end: '19:00:00',
-        career_goal: 'Backend Developer'
+        career_goal: 'Backend Developer',
+        auto_create_smart_goals: false
       });
     }
     
@@ -370,11 +371,11 @@ exports.getPreferences = async (req, res) => {
 exports.savePreferences = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { preferred_study_time, daily_hours, office_time_start, office_time_end, career_goal } = req.body;
+    const { preferred_study_time, daily_hours, office_time_start, office_time_end, career_goal, auto_create_smart_goals } = req.body;
     
     const upsertQuery = `
-      INSERT INTO clover_user_preferences (user_id, preferred_study_time, daily_hours, office_time_start, office_time_end, career_goal, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+      INSERT INTO clover_user_preferences (user_id, preferred_study_time, daily_hours, office_time_start, office_time_end, career_goal, auto_create_smart_goals, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
       ON CONFLICT (user_id) 
       DO UPDATE SET 
         preferred_study_time = EXCLUDED.preferred_study_time,
@@ -382,6 +383,7 @@ exports.savePreferences = async (req, res) => {
         office_time_start = EXCLUDED.office_time_start,
         office_time_end = EXCLUDED.office_time_end,
         career_goal = EXCLUDED.career_goal,
+        auto_create_smart_goals = EXCLUDED.auto_create_smart_goals,
         updated_at = CURRENT_TIMESTAMP
       RETURNING *;
     `;
@@ -392,7 +394,8 @@ exports.savePreferences = async (req, res) => {
       daily_hours || 2.0, 
       office_time_start || '10:00:00', 
       office_time_end || '19:00:00', 
-      career_goal || 'Backend Developer'
+      career_goal || 'Backend Developer',
+      auto_create_smart_goals === true ? true : false
     ]);
     
     res.json({ message: 'Preferences saved!', preferences: result.rows[0] });
@@ -441,6 +444,8 @@ exports.chatWithCoach = async (req, res) => {
 
     const openai = new OpenAI({ apiKey });
 
+    const localTimeStr = new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata', timeStyle: 'long', dateStyle: 'full' });
+
     const systemMessage = `
 You are Code Clover 🍀, a brilliant, personalized AI Study Coach for the user.
 Your personality is encouraging, practical, and highly structured.
@@ -448,6 +453,7 @@ You MUST provide actionable, time-boxed schedules when the user asks for a plan.
 Format your responses using clean Markdown. Use emojis appropriately.
 
 Here is the user's current context:
+- Current Local Time: ${localTimeStr}
 - Career Goal: ${prefs.career_goal}
 - Preferred Study Time: ${prefs.preferred_study_time}
 - Target Daily Study Hours: ${prefs.daily_hours} hrs
@@ -456,23 +462,106 @@ Here is the user's current context:
 - Active Long-term Goals: ${activeGoals.length > 0 ? JSON.stringify(activeGoals) : 'None currently set'}
 - Top Pending Todos: ${todos.length > 0 ? JSON.stringify(todos) : 'None currently pending'}
 
-When generating plans (like "Plan My Day"):
+When generating plans (like "Plan My Day", "Plan My Week", or "Plan My Month"):
 - Factor in their office hours (don't schedule study during office hours).
 - Factor in their preferred study time (Morning, Afternoon, Night).
 - Factor in their career goal and pending todos.
 - Provide a concrete timeline (e.g. 8:00 PM - 9:00 PM: [Task]).
+
+CRITICAL SCHEDULING RULES:
+1. ALWAYS use the \`schedule_smart_goals\` tool when the user asks you to "add it to my goals", "schedule it", or asks for a plan.
+2. If the user asks for a WEEKLY or MONTHLY plan, you MUST use the \`schedule_smart_goals\` tool to generate specific DAILY study sessions (e.g., 1 goal per day at their preferred study time) for the duration of the plan.
+3. NEVER schedule a smart goal with a start_timestamp that is in the past compared to the Current Local Time.
+4. If the user asks for a time block that has already passed today, schedule it for TOMORROW.
+5. Always verify the current time before triggering the schedule_smart_goals tool.
 `;
 
-    const response = await openai.chat.completions.create({
+    const tools = [];
+    if (prefs.auto_create_smart_goals) {
+      tools.push({
+        type: "function",
+        function: {
+          name: "schedule_smart_goals",
+          description: "Automatically schedules multiple Smart Goals in the database. Call this tool when you create a study plan with specific time blocks.",
+          parameters: {
+            type: "object",
+            properties: {
+              goals: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    title: { type: "string", description: "Short title of the goal" },
+                    reason: { type: "string", description: "Why the user is doing this" },
+                    priority: { type: "string", enum: ["Low", "Medium", "High"] },
+                    start_timestamp: { type: "string", description: "ISO 8601 UTC timestamp for start time (e.g. 2026-06-22T14:00:00Z)" },
+                    end_timestamp: { type: "string", description: "ISO 8601 UTC timestamp for end time" }
+                  },
+                  required: ["title", "reason", "priority", "start_timestamp", "end_timestamp"]
+                }
+              }
+            },
+            required: ["goals"]
+          }
+        }
+      });
+    }
+
+    const payload = {
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: systemMessage },
         { role: "user", content: prompt }
       ],
       temperature: 0.7,
-    });
+    };
+    if (tools.length > 0) payload.tools = tools;
 
-    const aiMessage = response.choices[0].message.content.trim();
+    const response = await openai.chat.completions.create(payload);
+
+    let aiMessage = '';
+    const responseMessage = response.choices[0].message;
+
+    if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
+      payload.messages.push(responseMessage);
+      
+      try {
+        for (const toolCall of responseMessage.tool_calls) {
+          if (toolCall.function.name === 'schedule_smart_goals') {
+            const args = JSON.parse(toolCall.function.arguments);
+            const goalsToCreate = args.goals || [];
+            
+            for (const g of goalsToCreate) {
+              await db.query(
+                'INSERT INTO clover_smart_goals (user_id, title, reason, priority, start_time, end_time, status) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+                [userId, g.title, g.reason, g.priority, g.start_timestamp, g.end_timestamp, 'Active']
+              );
+            }
+            
+            payload.messages.push({
+              role: "tool",
+              content: "Successfully saved " + goalsToCreate.length + " smart goals to the database.",
+              tool_call_id: toolCall.id
+            });
+          } else {
+            // Unrecognized tool
+            payload.messages.push({
+              role: "tool",
+              content: "Tool executed.",
+              tool_call_id: toolCall.id
+            });
+          }
+        }
+        
+        const followUp = await openai.chat.completions.create(payload);
+        aiMessage = followUp.choices[0].message.content.trim();
+      } catch (err) {
+        console.error("Tool execution error:", err);
+        aiMessage = "I created your plan, but I encountered an error automatically saving the goals to your database. Error details: " + err.message;
+      }
+    } else {
+      aiMessage = responseMessage.content.trim();
+    }
 
     // Optionally save to chat history
     try {
