@@ -2,6 +2,18 @@ const db = require('../db');
 const { recalculateAttendance } = require('./attendanceController');
 const { OpenAI } = require('openai');
 
+// Helper to decode HTML entities in scraped YouTube data
+const decodeHTMLEntities = (str) => {
+  if (!str) return '';
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'");
+};
+
 // ─── Timestamps and Chapters Parser ──────────────────────────────────────────
 const parseTimestamps = (description, videoId, totalDuration = 1800) => {
   if (!description) return [];
@@ -230,6 +242,7 @@ const scrapeYouTubePlaylist = async (playlistId) => {
         title = ytData.header.playlistHeaderRenderer.title.simpleText || title;
       } catch (err) {}
     }
+    title = decodeHTMLEntities(title);
 
     // Extract videos
     let rawVideos = [];
@@ -249,10 +262,14 @@ const scrapeYouTubePlaylist = async (playlistId) => {
 
       let vTitle = '';
       try {
-        vTitle = v.title.runs[0].text || v.title.simpleText || 'Untitled Episode';
+        const runsText = v.title?.runs?.[0]?.text;
+        const simpleText = v.title?.simpleText;
+        const accessibilityText = v.title?.accessibility?.accessibilityData?.label;
+        vTitle = runsText || simpleText || accessibilityText || `Video ${index + 1}`;
       } catch (err) {
-        vTitle = `Episode ${index + 1}`;
+        vTitle = `Video ${index + 1}`;
       }
+      vTitle = decodeHTMLEntities(vTitle);
 
       let vId = v.videoId;
       
@@ -601,19 +618,33 @@ const fetchSingleVideoMetadata = async (videoId, apiKey) => {
       if (response.ok) {
         const html = await response.text();
         
-        const titleMatch = html.match(/<title>(.*?)<\/title>/i);
-        if (titleMatch) {
-          title = titleMatch[1].replace(' - YouTube', '');
+        const ogTitleMatch = html.match(/<meta\s+property="og:title"\s+content="(.*?)"/i) || html.match(/<meta\s+name="title"\s+content="(.*?)"/i);
+        if (ogTitleMatch) {
+          title = ogTitleMatch[1];
+        } else {
+          const titleMatch = html.match(/<title>(.*?)<\/title>/i);
+          if (titleMatch) {
+            title = titleMatch[1].replace(' - YouTube', '');
+          }
         }
+        
         const descMatch = html.match(/<meta\s+name="description"\s+content="(.*?)"/i) || html.match(/<meta\s+property="og:description"\s+content="(.*?)"/i);
         if (descMatch) {
           description = descMatch[1];
+        }
+
+        // Clean titles that match redirect/consent pages
+        if (title.toLowerCase().includes('before you continue to youtube') || title.toLowerCase() === 'youtube') {
+          title = 'YouTube Video Lesson';
         }
       }
     } catch (err) {
       console.error('Single video scraper error:', err.message);
     }
   }
+
+  title = decodeHTMLEntities(title);
+  description = decodeHTMLEntities(description);
 
   const videos = [{
     video_id: videoId,
