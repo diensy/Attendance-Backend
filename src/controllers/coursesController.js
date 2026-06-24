@@ -585,7 +585,7 @@ ${description.substring(0, 4000)}
 const fetchSingleVideoMetadata = async (videoId, apiKey) => {
   let title = 'YouTube Video Lesson';
   let description = 'Self-paced learning lesson.';
-  let totalDuration = 1800; // 30 mins default
+  let totalDuration = 0; // Will be determined from API or scraper
   
   if (apiKey) {
     try {
@@ -605,8 +605,8 @@ const fetchSingleVideoMetadata = async (videoId, apiKey) => {
     }
   }
 
-  // Fallback scraper if no API key or API failed
-  if (!apiKey) {
+  // Scraper: run if no API key OR if API key didn't return a duration
+  if (!apiKey || totalDuration === 0) {
     try {
       const response = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
         headers: {
@@ -618,6 +618,7 @@ const fetchSingleVideoMetadata = async (videoId, apiKey) => {
       if (response.ok) {
         const html = await response.text();
         
+        // --- Parse title ---
         const ogTitleMatch = html.match(/<meta\s+property="og:title"\s+content="(.*?)"/i) || html.match(/<meta\s+name="title"\s+content="(.*?)"/i);
         if (ogTitleMatch) {
           title = ogTitleMatch[1];
@@ -628,9 +629,56 @@ const fetchSingleVideoMetadata = async (videoId, apiKey) => {
           }
         }
         
+        // --- Parse description ---
         const descMatch = html.match(/<meta\s+name="description"\s+content="(.*?)"/i) || html.match(/<meta\s+property="og:description"\s+content="(.*?)"/i);
         if (descMatch) {
           description = descMatch[1];
+        }
+
+        // --- Parse real video duration from ytInitialData / ytInitialPlayerResponse ---
+        // Strategy 1: lengthSeconds in ytInitialData JSON
+        const ytDataMatch = html.match(/ytInitialData\s*=\s*({.+?});/);
+        if (ytDataMatch) {
+          try {
+            const ytData = JSON.parse(ytDataMatch[1]);
+            const lengthText = findValInObject(ytData, 'lengthSeconds');
+            if (lengthText) {
+              const parsed = parseInt(lengthText, 10);
+              if (!isNaN(parsed) && parsed > 0) {
+                totalDuration = parsed;
+                console.log(`🍀 [Scraper] Found duration via ytInitialData.lengthSeconds: ${parsed}s`);
+              }
+            }
+          } catch (e) {}
+        }
+
+        // Strategy 2: ytInitialPlayerResponse JSON (more reliable for duration)
+        if (totalDuration === 0) {
+          const playerResponseMatch = html.match(/ytInitialPlayerResponse\s*=\s*({.+?});/);
+          if (playerResponseMatch) {
+            try {
+              const playerData = JSON.parse(playerResponseMatch[1]);
+              const lengthSec = playerData?.videoDetails?.lengthSeconds;
+              if (lengthSec) {
+                const parsed = parseInt(lengthSec, 10);
+                if (!isNaN(parsed) && parsed > 0) {
+                  totalDuration = parsed;
+                  console.log(`🍀 [Scraper] Found duration via ytInitialPlayerResponse.lengthSeconds: ${parsed}s`);
+                }
+              }
+            } catch (e) {}
+          }
+        }
+
+        // Strategy 3: meta itemprop="duration" (PT#H#M#S format)
+        if (totalDuration === 0) {
+          const durationMeta = html.match(/itemprop="duration"\s+content="(PT[^"]+)"/i);
+          if (durationMeta) {
+            try {
+              totalDuration = parseISO8601Duration(durationMeta[1]);
+              console.log(`🍀 [Scraper] Found duration via itemprop meta: ${totalDuration}s`);
+            } catch (e) {}
+          }
         }
 
         // Clean titles that match redirect/consent pages
@@ -641,6 +689,12 @@ const fetchSingleVideoMetadata = async (videoId, apiKey) => {
     } catch (err) {
       console.error('Single video scraper error:', err.message);
     }
+  }
+
+  // Final fallback if duration still not found
+  if (totalDuration === 0) {
+    totalDuration = 1800;
+    console.warn(`🍀 [Scraper] Could not determine video duration for ${videoId}, defaulting to 1800s`);
   }
 
   title = decodeHTMLEntities(title);
@@ -832,7 +886,22 @@ exports.getCourseDetails = async (req, res) => {
 exports.updateVideoProgress = async (req, res) => {
   const userId = req.user.id;
   const videoId = req.params.id;
-  const { watched_seconds, notes } = req.body;
+  const { watched_seconds, notes, actual_duration_seconds } = req.body;
+
+  // Auto-correct duration_seconds if the player-reported duration is longer than stored
+  // This fixes videos imported with the wrong 1800s default duration
+  if (actual_duration_seconds && actual_duration_seconds > 0) {
+    try {
+      await db.query(
+        `UPDATE clover_course_videos 
+         SET duration_seconds = $1 
+         WHERE id = $2 AND duration_seconds < $1`,
+        [Math.round(actual_duration_seconds), videoId]
+      );
+    } catch (durErr) {
+      console.warn('Duration auto-correct failed:', durErr.message);
+    }
+  }
 
   try {
     const currentProgress = await db.query(
