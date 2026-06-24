@@ -12,15 +12,16 @@ const startScheduler = () => {
 
   setInterval(async () => {
     try {
-      const now = new Date();
-      const currentHour = now.getHours();
-      const currentMinute = now.getMinutes();
-      const currentDateStr = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
+      // Use IST (UTC+5:30) for all time checks — server may be in UTC (Render)
+      const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const currentHour = nowIST.getHours();
+      const currentMinute = nowIST.getMinutes();
+      const currentDateStr = `${nowIST.getFullYear()}-${nowIST.getMonth() + 1}-${nowIST.getDate()}`;
 
-      // Check if it is exactly 9:00 PM (21:00) and hasn't been sent yet today
+      // Check if it is 9:00 PM IST (21:00) and hasn't been sent yet today
       if (currentHour === 21 && currentMinute === 0 && lastSentDateStr !== currentDateStr) {
         lastSentDateStr = currentDateStr;
-        console.log(`⏰ [Scheduler] 9:00 PM check. Querying database for today's incomplete goals...`);
+        console.log(`⏰ [Scheduler] 9:00 PM IST check. Querying database for today's incomplete goals...`);
         await sendGoalRemindersForToday();
       }
 
@@ -99,9 +100,9 @@ const checkAndInterruptOfflineSmartGoals = async () => {
          AND g.start_time <= NOW() 
          AND g.end_time > NOW()
          AND (
-           (g.last_heartbeat IS NOT NULL AND EXTRACT(EPOCH FROM (NOW() - g.last_heartbeat)) > 180)
+           (g.last_heartbeat IS NOT NULL AND EXTRACT(EPOCH FROM (NOW() - g.last_heartbeat)) > 300)
            OR
-           (g.last_heartbeat IS NULL AND EXTRACT(EPOCH FROM (NOW() - g.start_time)) >= 600)
+           (g.last_heartbeat IS NULL AND EXTRACT(EPOCH FROM (NOW() - g.start_time)) >= 1200)
          )`
     );
 
@@ -191,36 +192,39 @@ const sendGoalRemindersForToday = async () => {
 const checkSmartGoalReminders = async () => {
   try {
     // Query goals starting within 60 mins or 30 mins where emails haven't been sent.
-    // Calculations done inside DB via NOW() to ensure TZ-independence.
+    // Widened windows (13-62 min, 13-32 min) to prevent missing the tick if server was briefly asleep.
+    // Uses DB NOW() to be timezone-safe (DB is UTC, so we compare UTC times).
+    // Includes both 'Active' status goals (already started) since goals are Active from creation.
     const goalsRes = await db.query(
       `SELECT g.*, u.username, u.email,
               EXTRACT(EPOCH FROM (g.start_time - NOW())) / 60 as diff_mins
        FROM clover_smart_goals g 
        JOIN clover_users u ON g.user_id = u.id 
        WHERE g.status = 'Active' 
+         AND g.start_time > NOW()
          AND (
-           (EXTRACT(EPOCH FROM (g.start_time - NOW())) / 60 <= 60 AND EXTRACT(EPOCH FROM (g.start_time - NOW())) / 60 >= 45 AND g.reminder_sent_60 = FALSE)
+           (EXTRACT(EPOCH FROM (g.start_time - NOW())) / 60 <= 62 AND EXTRACT(EPOCH FROM (g.start_time - NOW())) / 60 >= 43 AND g.reminder_sent_60 = FALSE)
            OR
-           (EXTRACT(EPOCH FROM (g.start_time - NOW())) / 60 <= 30 AND EXTRACT(EPOCH FROM (g.start_time - NOW())) / 60 >= 15 AND g.reminder_sent_30 = FALSE)
+           (EXTRACT(EPOCH FROM (g.start_time - NOW())) / 60 <= 32 AND EXTRACT(EPOCH FROM (g.start_time - NOW())) / 60 >= 13 AND g.reminder_sent_30 = FALSE)
          )`
     );
 
     for (const goal of goalsRes.rows) {
       const diffMins = Math.floor(goal.diff_mins);
 
-      // Send 60-min reminder: starting in <= 60 mins and >= 45 mins, and not yet sent
-      if (diffMins <= 60 && diffMins >= 45 && !goal.reminder_sent_60) {
-        console.log(`⏰ [Scheduler] Sending 60-min reminder to ${goal.email} for goal: ${goal.title}`);
-        await sendSmartGoalReminderEmail(goal.email, goal.username, goal, diffMins);
+      // Send 60-min reminder: starting in ~45-62 mins, not yet sent
+      if (diffMins <= 62 && diffMins >= 43 && !goal.reminder_sent_60) {
+        console.log(`⏰ [Scheduler] Sending 60-min reminder to ${goal.email} for goal: ${goal.title} (starts in ${diffMins} mins)`);
+        await sendSmartGoalReminderEmail(goal.email, goal.username, goal, 60);
         await db.query(
           `UPDATE clover_smart_goals SET reminder_sent_60 = TRUE WHERE id = $1`,
           [goal.id]
         );
       }
-      // Send 30-min reminder: starting in <= 30 mins and >= 15 mins, and not yet sent
-      else if (diffMins <= 30 && diffMins >= 15 && !goal.reminder_sent_30) {
-        console.log(`⏰ [Scheduler] Sending 30-min reminder to ${goal.email} for goal: ${goal.title}`);
-        await sendSmartGoalReminderEmail(goal.email, goal.username, goal, diffMins);
+      // Send 30-min reminder: starting in ~13-32 mins, not yet sent
+      else if (diffMins <= 32 && diffMins >= 13 && !goal.reminder_sent_30) {
+        console.log(`⏰ [Scheduler] Sending 30-min reminder to ${goal.email} for goal: ${goal.title} (starts in ${diffMins} mins)`);
+        await sendSmartGoalReminderEmail(goal.email, goal.username, goal, 30);
         await db.query(
           `UPDATE clover_smart_goals SET reminder_sent_30 = TRUE WHERE id = $1`,
           [goal.id]

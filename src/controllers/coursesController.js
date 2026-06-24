@@ -768,7 +768,16 @@ exports.getCourses = async (req, res) => {
   try {
     const result = await db.query(
       `SELECT c.*, 
-       COALESCE(COUNT(CASE WHEN p.is_completed = true THEN 1 END), 0) as completed_videos
+       COALESCE(COUNT(CASE WHEN p.is_completed = true THEN 1 END), 0) as completed_videos,
+       COUNT(v.id) as actual_total_videos,
+       COALESCE(SUM(v.duration_seconds), 0) as total_duration_seconds,
+       COALESCE(
+         -- For completed videos: count full duration as watched
+         SUM(CASE WHEN p.is_completed = true THEN v.duration_seconds ELSE 0 END)
+         +
+         -- For in-progress videos: count actual watched_seconds
+         SUM(CASE WHEN p.is_completed = false AND p.watched_seconds IS NOT NULL THEN p.watched_seconds ELSE 0 END)
+       , 0) as total_watched_seconds
        FROM clover_courses c
        LEFT JOIN clover_course_videos v ON v.course_id = c.id
        LEFT JOIN clover_user_video_progress p ON p.video_id = v.id AND p.user_id = $1
@@ -783,6 +792,7 @@ exports.getCourses = async (req, res) => {
     res.status(500).json({ message: 'Server error retrieving courses list' });
   }
 };
+
 
 exports.getCourseDetails = async (req, res) => {
   const userId = req.user.id;

@@ -191,13 +191,18 @@ exports.handleEarlyLogout = async (req, res) => {
 exports.smartGoalHeartbeat = async (req, res) => {
   const userId = req.user.id;
   try {
+    // Update last_heartbeat for:
+    //   1. Goals currently in progress (start_time <= NOW <= end_time)
+    //   2. Goals starting within the next 15 minutes (user is present and ready)
+    // This prevents the scheduler from falsely auto-interrupting a session
+    // just because the heartbeat hadn't fired before start_time.
     const result = await db.query(
       `UPDATE clover_smart_goals
        SET last_heartbeat = CURRENT_TIMESTAMP
        WHERE user_id = $1 
-         AND status = 'Active' 
-         AND start_time <= CURRENT_TIMESTAMP 
+         AND status = 'Active'
          AND end_time > CURRENT_TIMESTAMP
+         AND start_time <= (CURRENT_TIMESTAMP + INTERVAL '15 minutes')
        RETURNING *`,
       [userId]
     );
